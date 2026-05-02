@@ -1,0 +1,163 @@
+# X Chromosome Analysis Report
+**1000 Genomes Project — Phase 3**
+*Date: April 2026*
+
+---
+
+## Overview
+
+Two notebooks were used to analyse the X chromosome data from the 1000 Genomes Project Phase 3:
+
+| Notebook | Purpose |
+|---|---|
+| `x_analysis.ipynb` | Data ingestion, QC, and summary statistics |
+| `X_deeper_analysis.ipynb` | Population genetics and functional analysis |
+
+The raw input was a **27 GB VCF file** (`ALL.chrX.phase3_shapeit2_mvncall_integrated_v1c.20130502.genotypes.vcf`) covering **2,504 samples** from 5 super-populations (AFR, AMR, EAS, EUR, SAS).
+
+---
+
+## Part 1 — x_analysis.ipynb
+
+### What Was Done
+- Converted the 27 GB VCF to CSV using chunked streaming (no memory crash)
+- Parsed genotypes with sex-aware logic — females are diploid (0|0, 0|1, 1|1), males are hemizygous (0, 1)
+- Applied QC filters: FILTER=PASS, QUAL ≥ 30, biallelic only, call rate ≥ 95%
+- Computed per-variant allele frequency and call rate across all 2,504 samples
+- Computed per-sample missing rate and alternate allele burden
+- Computed population-level allele frequencies separately for AFR, AMR, EAS, EUR, SAS
+- Identified population-differentiated variants (max − min AF > 0.3)
+
+### Key Findings
+
+| Metric | Value |
+|---|---|
+| Total variants after QC | **3,437,097** |
+| Samples | **2,504** (1,271 female / 1,233 male) |
+| Population-differentiated variants (ΔAF > 0.3) | **132,173** |
+| Per-sample missing rate | **0%** (complete genotyping) |
+| Mean alternate allele burden per sample | **~105,576** |
+
+**Population sample sizes:**
+- AFR: 661 &nbsp;|&nbsp; EAS: 504 &nbsp;|&nbsp; EUR: 503 &nbsp;|&nbsp; SAS: 489 &nbsp;|&nbsp; AMR: 347
+
+**Output files:** `chrX_variant_summary_qc.csv`, `chrX_sample_summary_qc.csv`, `chrX_AF_by_population.csv`, `chrX_differentiated_variants.csv`
+
+---
+
+## Part 2 — X_deeper_analysis.ipynb
+
+### What Was Done
+- Loaded the pre-computed QC summary and population AF tables
+- GPU-accelerated (Apple MPS) tensor operations for FST and PCA
+- Ran 6 analyses: diversity metrics, FST, PCA, rare/common variants, Tajima's D, and functional annotation
+
+---
+
+### 1. Diversity Metrics
+
+| Population | Avg Heterozygosity | Private Variants | Polymorphic Sites |
+|---|---|---|---|
+| AFR | **0.0372** | **287,209** | **654,892** |
+| AMR | 0.0260 | 17,143 | 424,389 |
+| EAS | 0.0213 | 42,651 | 301,958 |
+| EUR | 0.0234 | 27,341 | 333,450 |
+| SAS | 0.0246 | 50,805 | 356,783 |
+
+**Finding:** AFR has the highest heterozygosity and most private variants — consistent with the out-of-Africa model where African populations retain the greatest genetic diversity. EAS has the lowest diversity, reflecting a bottleneck during migration.
+
+---
+
+### 2. Population Differentiation (FST)
+
+**Pairwise FST Matrix:**
+
+|  | AFR | AMR | EAS | EUR | SAS |
+|---|---|---|---|---|---|
+| AFR | 0 | 0.0821 | **0.1210** | 0.1038 | 0.0943 |
+| AMR | 0.0821 | 0 | 0.0401 | 0.0253 | **0.0227** |
+| EAS | 0.1210 | 0.0401 | 0 | 0.0752 | 0.0382 |
+| EUR | 0.1038 | 0.0253 | 0.0752 | 0 | 0.0289 |
+| SAS | 0.0943 | 0.0227 | 0.0382 | 0.0289 | 0 |
+
+**Finding:**
+- **Most differentiated:** AFR vs EAS (FST = 0.121) — the largest genetic distance, reflecting deep population separation
+- **Least differentiated:** AMR vs SAS (FST = 0.023) — consistent with shared ancestry and gene flow
+- These FST values are higher than typical autosomal values, expected for the X chromosome due to its lower effective population size (¾ of autosomes)
+
+**PCA:** PC1 (91.0%) + PC2 (5.5%) = 96.5% of variance explained — AFR separates cleanly from non-African populations on PC1.
+
+---
+
+### 3. Rare vs Common Variants
+
+| Population | Rare (<1%) | Low Freq (1–5%) | Common (>5%) |
+|---|---|---|---|
+| AFR | 2,779,510 | 270,243 | **387,344** |
+| AMR | 3,010,014 | 171,321 | 255,762 |
+| EAS | 3,132,445 | 80,027 | 224,625 |
+| EUR | 3,100,952 | 97,454 | 238,691 |
+| SAS | 3,077,620 | 112,417 | 247,060 |
+
+**Finding:** The vast majority of variants are rare (<1% AF) in all populations — typical of large-scale genomic data. AFR has the most common variants, consistent with greater standing genetic variation.
+
+---
+
+### 4. Selection Analysis — Tajima's D
+
+| Population | Tajima's D |
+|---|---|
+| AFR | -0.185 |
+| AMR | -0.171 |
+| EAS | -0.177 |
+| EUR | -0.160 |
+| SAS | -0.174 |
+
+**Finding:** All populations show mildly negative Tajima's D (around -0.17), indicating an excess of rare variants. This is consistent with **population expansion** and/or **purifying selection** acting on the X chromosome — a known biological signal. No population exceeded |D| > 1, so no strong directional or balancing selection was detected.
+
+---
+
+### 5. Geographic Patterns (Dendrogram)
+
+The FST-based dendrogram clusters populations consistent with known geography:
+- EAS branches earliest from the non-African cluster
+- EUR and AMR are closest together (shared ancestry + European admixture in Americas)
+- SAS sits between EAS and EUR
+
+---
+
+### 6. Functional Annotation
+
+Variants were annotated against 7 key X-linked gene regions (GRCh37 coordinates):
+
+| Gene | Variants | Disease Association |
+|---|---|---|
+| DMD | **59,272** | Duchenne Muscular Dystrophy |
+| AR | 4,072 | Androgen Insensitivity Syndrome |
+| FMR1 | 2,363 | Fragile X Syndrome |
+| MECP2 | 1,983 | Rett Syndrome |
+| HPRT1 | 1,035 | Lesch-Nyhan Syndrome |
+| XIST | 619 | X Inactivation |
+| G6PD | 328 | G6PD Deficiency |
+| Intergenic | 3,367,425 | — |
+
+**Total functional variants in genes: 69,672 (2.0% of all variants)**
+
+**Finding:** DMD dominates because it is the largest gene in the human genome (~2.4 Mb). The top 10 variants with the largest inter-population AF differences cluster around the AR gene region (~66 Mb), a known locus of X chromosome population differentiation.
+
+---
+
+## Summary of Key Findings
+
+1. **3.4 million variants** passed QC on the X chromosome — a much larger dataset than the Y chromosome
+2. **AFR has the greatest diversity** (highest heterozygosity, most private variants) — consistent with out-of-Africa theory
+3. **AFR vs EAS is the most genetically differentiated** population pair (FST = 0.121)
+4. **96.5% of variance** in population allele frequencies is captured by just 2 principal components
+5. **Mildly negative Tajima's D** across all populations indicates population expansion / purifying selection on the X chromosome
+6. **132,173 variants** show strong population differentiation (ΔAF > 0.3), with top candidates near the AR gene
+7. **69,672 variants** fall within known X-linked disease genes, with DMD harbouring the most
+
+---
+
+*Generated from: `x_analysis.ipynb` and `X_deeper_analysis.ipynb`*
+*Data source: 1000 Genomes Project Phase 3 — chrX*

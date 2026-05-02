@@ -1,0 +1,25 @@
+
+1. HAPLOGROUP METRICS:
+   - Highest heterozygosity: SAS
+   - Most private variants: EAS
+
+2. POPULATION DIFFERENTIATION:
+   - Most differentiated populations: AFR vs AMR
+   - FST value: 0.0000
+   - Least differentiated: AFR vs AMR
+   - FST value: 0.0000
+
+3. VARIANT FREQUENCY:
+   - Total rare variants: 279790
+   - Total common variants: 9673
+
+4. SELECTION SIGNALS:
+   - Populations showing selection (|D| > 1): []
+
+5. GEOGRAPHIC PATTERNS:
+   - See dendrogram for population relationships
+   - PCA explains 32.2% + 28.3% = 60.5% of variance
+
+6. FUNCTIONAL VARIANTS:
+   - Variants in genes: 252
+   - Total variants analyzed: 60789

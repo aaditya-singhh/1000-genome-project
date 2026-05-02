@@ -1,0 +1,23 @@
+
+1. DIVERSITY METRICS:
+   - Highest heterozygosity: AFR
+   - Most private variants : AFR
+
+2. POPULATION DIFFERENTIATION:
+   - Most differentiated : AFR vs EAS (FST=0.1210)
+   - Least differentiated: AMR vs SAS (FST=0.0227)
+
+3. VARIANT FREQUENCY:
+   - Total rare variants  : 15100541
+   - Total common variants: 1353482
+
+4. SELECTION SIGNALS:
+   - Populations showing selection (|D| > 1): []
+
+5. GEOGRAPHIC PATTERNS:
+   - See dendrogram for population relationships
+   - PCA explains 91.0% + 5.5% = 96.5% of variance
+
+6. FUNCTIONAL VARIANTS:
+   - Variants in X-linked genes: 69672
+   - Total variants analysed   : 3,437,097

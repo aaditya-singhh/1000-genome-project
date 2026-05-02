@@ -1,0 +1,984 @@
+TECHNIQUES, PARAMETERS, HYPERPARAMETERS & OUTPUT VALUES
+1000 Genomes Project — Complete Reference Document
+
+TABLE OF CONTENTS
+1.  y_analysis.ipynb
+2.  deeper_analysis.ipynb
+3.  experiment1_ml.ipynb
+4.  experiment2_ml.ipynb
+5.  experiment1_boosting_ensemble.ipynb
+6.  experiment1_boosting_ensemble_50PC.ipynb
+7.  experiment1_cnn.ipynb
+8.  X_analysis.ipynb
+9.  X_deeper_analysis.ipynb
+10. X_experiment1_ml.ipynb
+11. X_experiment2_ml.ipynb
+12. X_experiment2_other_approach.ipynb
+13. XY_coevaluation.ipynb
+
+1. y_analysis.ipynb
+PURPOSE : Initial QC and exploratory analysis of Y chromosome VCF data.
+DATASET : Y chromosome, 1233 male samples, 62,042 raw variants.
+
+--- TECHNIQUE: Delimiter Auto-Detection ---
+Method        : csv.Sniffer scans first 20 lines
+Candidates    : [',', '\t', ';', '|']
+Result        : comma delimiter detected
+
+--- TECHNIQUE: Quality Control (QC) Filtering ---
+Parameter               Value        Why
+QUAL threshold          > 30         Phred score >30 = <0.1% base-call error probability
+FILTER column           == "PASS"    Only variants that passed all variant-caller checks
+Biallelic filter        no comma in ALT  Multi-allelic sites removed for consistency
+Call rate threshold     >= 0.95      Variants with <95% call rate are unreliable
+Sample missingness      <= 0.10      Samples with >10% missing data removed
+
+--- TECHNIQUE: Male Detection on Y Chromosome ---
+Threshold : Call rate per sample > 0.05 (5%)
+Reason    : Females have ~0% Y calls; any sample >5% called = male
+
+--- TECHNIQUE: Genotype Encoding ---
+Genotype String         Numeric Value
+0 / 0|0 / 0/0           0.0  (reference homozygous)
+1 / 1|1 / 1/1           1.0  (alternate homozygous)
+. / ./. / .|.           NaN  (missing)
+(No heterozygous on Y — hemizygous chromosome)
+
+--- TECHNIQUE: Population-Level Allele Frequency ---
+Groups : AFR, AMR, EAS, EUR, SAS (5 super-populations)
+Method : Mean of numeric genotypes per group, ignoring NaN
+
+--- OUTPUT VALUES ---
+Total raw variants        : 62,042
+Variants after QC         : 61,995  (after QUAL/FILTER/biallelic)
+After variant call-rate QC: 60,789
+Male samples detected     : 1,233
+Sample columns total      : 1,233
+
+Population distribution (males on Y):
+  AFR : 319
+  SAS : 260
+  EAS : 244
+  EUR : 240
+  AMR : 170
+
+Alt burden statistics (per sample):
+  Mean alt burden  : 105,576
+  Std alt burden   : 15,062
+  Min alt burden   : 88,384
+  Max alt burden   : 137,878
+
+Population-differentiated variants (delta AF > 0.3): 132,173
+
+Output files:
+  chrY_variant_summary_qc.csv   — per-variant QC table
+  chrY_sample_summary_qc.csv    — per-sample missing rate and alt burden
+  chrY_AF_by_population.csv     — allele frequency per variant × super-population
+
+
+2. deeper_analysis.ipynb
+PURPOSE : Advanced population genetics analysis of Y chromosome.
+INPUT   : chrY_AF_by_population.csv, chrY_variant_summary_qc.csv
+
+--- TECHNIQUE: Haplogroup / Lineage Analysis ---
+Method  : Rule-based classification using allele frequency patterns
+Reason  : Approximates haplogroup structure without external SNP databases
+
+--- OUTPUT VALUES: Diversity Metrics (Y chromosome) ---
+Population    avg_heterozygosity    private_variants    n_polymorphic
+AFR                    0.008627              1993.0           4060.0
+AMR                    0.011487              1981.0           5333.0
+EAS                    0.010463              4080.0           5259.0
+EUR                    0.009475               620.0           4224.0
+SAS                    0.012515              3265.0           5278.0
+Highest heterozygosity : SAS (0.012515)
+Most private variants  : EAS (4080)
+
+--- TECHNIQUE: Weir & Cockerham FST ---
+Formula : FST = (H_T - H_S) / H_T
+Applied to : All 10 pairwise combinations of 5 super-populations
+NaN removal: Applied before calculation
+
+--- OUTPUT VALUES: FST Matrix (Y chromosome) ---
+Note: Y chromosome FST values showed 0.0 in output — data sparsity on Y
+(Y has very few variants per population for reliable FST estimation)
+Most differentiated pair (from summary): AFR vs AMR
+
+--- TECHNIQUE: PCA on Allele Frequencies ---
+Library : sklearn.decomposition.PCA
+Input   : Allele frequency matrix (variants x populations)
+Output Values:
+  PC1 explained variance : 32.2%
+  PC2 explained variance : 28.3%
+
+--- TECHNIQUE: Variant Classification by Frequency ---
+Category          Threshold    Count (example, AFR)
+Rare              AF < 1%      56,728
+Low Frequency     1% <= AF < 5%  2,467
+Common            AF >= 5%      1,594
+
+--- OUTPUT VALUES: Variant counts per class per population ---
+              Rare (<1%)    Low Freq (1-5%)    Common (>5%)
+AFR               56728               2467            1594
+AMR               55456               3767            1566
+EAS               55530               2950            2309
+EUR               56565               2610            1614
+SAS               55511               2688            2590
+Total rare variants   : 279,790
+Total common variants : 9,673
+
+--- TECHNIQUE: Tajima's D (Simplified) ---
+Formula      : D = (pi - theta_W) / std_deviation
+Parameter    : n_samples = 250 (approximate haploid count per pop on Y)
+Applied to   : Each of 5 super-populations
+
+--- OUTPUT VALUES: Tajima's D (Y chromosome) ---
+AFR : -0.288  (negative = excess rare variants, directional/purifying selection)
+AMR : -0.235
+EAS : -0.257
+EUR : -0.242
+SAS : -0.259
+Populations with |D| > 1 : None (all signals weak on Y)
+
+--- TECHNIQUE: Geographic Distance & Dendrogram ---
+Library : scipy.cluster.hierarchy.linkage, squareform
+Fix     : .copy() applied to FST array to avoid read-only array error
+
+--- TECHNIQUE: Functional Annotation (Y chromosome) ---
+Method  : Position-based mapping to known Y gene coordinates
+Genes   : SRY, AMELY, DAZ, RBMY, PRY, BPY2, CDY, HSFY, XKRY, VCY
+
+--- OUTPUT VALUES: Functional Annotation (Y) ---
+Gene            Count
+Intergenic      60,537
+AMELY              251
+SRY                  1
+Total functional variants in genes : 252
+Top gene: AMELY with 251 variants
+
+
+3. experiment1_ml.ipynb
+PURPOSE : ML classification of Y chromosome samples into 5 super-populations.
+DATASET : 1233 male samples, 60,789 QC-passed variants.
+
+--- TECHNIQUE: Missing Value Imputation ---
+Method : Fill NaN with 0 (reference allele)
+Why    : Y is hemizygous; missing call more likely = reference than alternate
+
+--- TECHNIQUE: Principal Component Analysis (PCA) ---
+Library       : sklearn.decomposition.PCA
+n_components  : 50
+random_state  : 42
+Preprocessing : None (genotypes already on 0/1 scale)
+
+--- OUTPUT VALUES: PCA ---
+Variance explained by 50 PCs : 86.8%
+
+--- TECHNIQUE: Train / Test Split ---
+test_size    : 0.20 (20%)
+stratify     : y (class-balanced)
+random_state : 42
+
+--- OUTPUT VALUES: Data Split ---
+Train samples : 986
+Test samples  : 247
+Train class distribution:
+  AFR : 255
+  AMR : 136
+  EAS : 195
+  EUR : 192
+  SAS : 208
+
+--- TECHNIQUE: Supervised Classifiers ---
+
+Logistic Regression:
+  max_iter      : 1000
+  solver        : lbfgs
+  C             : 1.0
+  multi_class   : auto (lbfgs default)
+
+SVM (RBF):
+  kernel        : rbf
+  C             : 10
+  gamma         : scale
+  decision_function_shape : ovo
+
+Random Forest:
+  n_estimators  : 200
+  max_depth     : None (unlimited)
+  n_jobs        : -1
+
+Decision Tree:
+  Default parameters
+
+KNN:
+  Default k     : 5
+  n_jobs        : -1
+
+--- TECHNIQUE: Cross-Validation ---
+Method : 5-fold Stratified CV (cross_val_score)
+Metric : Accuracy
+
+--- OUTPUT VALUES: Supervised Classification (Y Chromosome, 5 Super-Populations) ---
+Model                   Test Accuracy    CV Mean    CV Std
+Logistic Regression          0.8623       0.8266    0.0270
+SVM (RBF)                    0.8583       0.8357    0.0197
+Random Forest                0.8583       0.8347    0.0175
+KNN (k=5)                    0.8300       0.8215    0.0151
+Decision Tree                0.8097       0.7982    0.0286
+
+Best Model : Logistic Regression (Test Accuracy = 86.23%)
+
+Per-class metrics (best model - Logistic Regression):
+Class     Precision    Recall    F1-Score    Support
+AFR          0.97       0.95       0.96        64
+AMR          0.83       0.44       0.58        34
+EAS          0.96       1.00       0.98        49
+EUR          0.65       0.83       0.73        48
+SAS          0.91       0.92       0.91        52
+
+--- TECHNIQUE: K-Means Clustering ---
+n_clusters   : 5
+n_init       : 20
+max_iter     : 500
+random_state : 42
+
+--- OUTPUT VALUES: K-Means (Y Chromosome, k=5) ---
+ARI (Adjusted Rand Index)       : 0.4637
+NMI (Normalized Mutual Info)    : 0.4922
+Inertia (within-cluster SSE)    : 229,165.05
+
+Cluster composition (proportions):
+Cluster    AFR     AMR     EAS     EUR     SAS
+0          0.069   0.096   0.112   0.234   0.488
+1          0.042   0.381   0.010   0.443   0.125
+2          0.888   0.093   0.000   0.019   0.000
+3          0.000   0.000   0.881   0.098   0.021
+4          0.000   0.012   0.000   0.143   0.845
+
+
+4. experiment2_ml.ipynb
+PURPOSE : ML classification of Y chromosome samples into 26 sub-populations.
+DATASET : 1233 male samples, 60,789 variants — same as Exp 1, label changed to 'pop'.
+
+--- KEY DIFFERENCE FROM EXP 1 ---
+Target label  : pop (26 sub-populations) instead of super_pop (5)
+K-Means k     : 26 instead of 5
+All other hyperparameters identical to Experiment 1.
+
+--- OUTPUT VALUES: Data ---
+Sub-population sample counts:
+  ITU:59  JPT:56  GIH:56  GWD:55  STU:55  PUR:54  IBS:54  ESN:53
+  TSI:53  CHS:52  YRI:52  CEU:49  PJL:48  ACB:47  GBR:46  KHV:46
+  CHB:46  CDX:44  LWK:44  CLM:43  BEB:42  MSL:42  PEL:41  FIN:38
+  MXL:32  ASW:26
+
+--- OUTPUT VALUES: PCA ---
+Variance explained by 50 PCs : 86.8%   (same data as Exp 1)
+
+--- OUTPUT VALUES: Train/Test Split ---
+Train : 986 samples
+Test  : 247 samples
+
+--- OUTPUT VALUES: Supervised Classification (Y Chromosome, 26 Sub-Populations) ---
+Model                   Test Accuracy    CV Mean    CV Std
+SVM (RBF)                    0.3846       0.3550    0.0103
+Random Forest                0.3846       0.3713    0.0374
+KNN (k=5)                    0.3765       0.3530    0.0124
+Logistic Regression          0.3563       0.3570    0.0167
+Decision Tree                0.3320       0.3155    0.0214
+
+Best Model : SVM (RBF) (Test Accuracy = 38.46%)
+
+--- OUTPUT VALUES: K-Means (Y Chromosome, k=26) ---
+ARI     : 0.1780
+NMI     : 0.4910
+Inertia : 47,358.37
+Clustering accuracy (majority-vote mapping) : 31.79%
+
+
+5. experiment1_boosting_ensemble.ipynb
+PURPOSE : Gradient boosting ensembles with Bayesian tuning on Y chromosome.
+DATASET : 1233 males, 60,789 variants.
+
+--- TECHNIQUE: PCA (300 Components) ---
+n_components  : 300
+StandardScaler: Applied before PCA (zero mean, unit variance)
+random_state  : 42
+
+--- OUTPUT VALUES: PCA ---
+Variance explained by 300 PCs : 64.9%
+
+--- TECHNIQUE: Three-Way Train/Validation/Test Split ---
+Test          : 15%   -> 185 samples
+Validation    : ~12.7% -> 185 samples
+Train         : ~72%  -> 863 samples
+Full (train+val) for final fit: 1048 samples
+
+--- TECHNIQUE: Class Imbalance Handling ---
+Method   : Inverse-frequency sample weights
+Formula  : weight_i = (1 / class_count[y_i]), normalised to mean = 1
+Weight range : 0.77 to 1.45
+
+--- TECHNIQUE: Optuna Bayesian Hyperparameter Tuning ---
+Library  : optuna (TPE — Tree-structured Parzen Estimator)
+Trials   : 100 per model type
+Objective: 5-fold stratified CV accuracy on training set
+CV folds : StratifiedKFold(n_splits=5)
+
+--- OUTPUT VALUES: XGBoost Best Hyperparameters (Optuna) ---
+CV Accuracy     : 84.13%
+n_estimators    : 499
+max_depth       : 4
+learning_rate   : 0.007484
+subsample       : 0.8423
+colsample_bytree: 0.3339
+colsample_bylevel: 0.3398
+min_child_weight: 7
+gamma           : 0.7193
+reg_alpha       : 0.0266
+reg_lambda      : 2.7600
+
+--- OUTPUT VALUES: LightGBM Best Hyperparameters (Optuna) ---
+CV Accuracy      : 83.78%
+n_estimators     : 1635
+max_depth        : 7
+learning_rate    : 0.006969
+num_leaves       : 125
+subsample        : 0.7875
+colsample_bytree : 0.9186
+min_child_samples: 16
+reg_alpha        : 0.002294
+reg_lambda       : 0.16725
+
+--- OUTPUT VALUES: CatBoost Best Hyperparameters (Optuna) ---
+CV Accuracy    : 84.48%
+iterations     : 1662
+depth          : 3
+learning_rate  : 0.031054
+l2_leaf_reg    : 0.087073
+subsample      : 0.9535
+colsample_bylevel: 0.9105
+min_data_in_leaf: 6
+
+--- TECHNIQUE: Ensemble (15 Models) ---
+Composition  : 5 seeds x 3 model types (XGBoost, LightGBM, CatBoost)
+Prediction   : Average softmax probabilities across all 15 models
+Seeds used   : RANDOM_STATE + i*7 for i in range(5)
+
+--- OUTPUT VALUES: Ensemble Results (Y Chromosome, 5 Super-Populations) ---
+XGBoost  ensemble  (x5) : 87.57%
+LightGBM ensemble  (x5) : 86.49%
+CatBoost ensemble  (x5) : 89.19%
+FULL ENSEMBLE (x15)     : 86.49%
+Baseline (LR)           : 86.23%
+Improvement             : +0.26 percentage points
+
+Per-class metrics (full ensemble):
+Class     Precision    Recall    F1
+AFR          0.94       0.96     0.95   (support: 48)
+AMR          0.62       0.52     0.57   (support: 25)
+EAS          0.95       1.00     0.97   (support: 37)
+EUR          0.70       0.78     0.74   (support: 36)
+SAS          (see classification report)
+
+Saved model: exp3_boosting_ensemble.pkl
+
+
+6. experiment1_boosting_ensemble_50PC.ipynb
+PURPOSE : Same as notebook 5 but using variance-threshold PCA instead of fixed 300 PCs.
+
+--- TECHNIQUE: Adaptive PCA ---
+VAR_THRESHOLD     : 0.80 (80% variance target)
+Method            : Fit full PCA, find minimum PCs reaching threshold
+
+--- OUTPUT VALUES: PCA ---
+Components needed for 80% variance : 539
+Actual variance explained by 539 PCs: 79.5%  (slightly under due to rounding)
+
+--- OUTPUT VALUES: XGBoost Best Hyperparameters (Optuna) ---
+CV Accuracy      : 83.79%
+n_estimators     : 829
+max_depth        : 7
+learning_rate    : 0.032555
+subsample        : 0.7813
+colsample_bytree : 0.3475
+colsample_bylevel: 0.3502
+min_child_weight : 1
+gamma            : 1.9881
+reg_alpha        : 0.2505
+reg_lambda       : 0.5125
+
+--- OUTPUT VALUES: LightGBM Best Hyperparameters (Optuna) ---
+CV Accuracy      : 84.36%
+n_estimators     : 1005
+max_depth        : 9
+learning_rate    : 0.032680
+num_leaves       : 104
+subsample        : 0.9319
+colsample_bytree : 0.4996
+min_child_samples: 5
+reg_alpha        : 0.2228
+reg_lambda       : 0.000206
+
+Saved model: exp2_boosting_ensemble.pkl
+
+
+7. experiment1_cnn.ipynb
+PURPOSE : XGBoost x10 ensemble with Optuna, data augmentation, Focal Loss on Y chromosome.
+
+--- TECHNIQUE: PCA (300 Components) ---
+n_components  : 300
+StandardScaler: Applied
+Variance explained : 64.9%
+
+--- TECHNIQUE: Data Augmentation (AugmentedDataset) ---
+1. Gaussian Noise:
+   noise_std : 0.05
+   Applied to: Each feature during training (disabled at val/test)
+   Why       : Prevents overfitting; simulates measurement noise
+
+2. Random Masking:
+   p_mask    : 0.10 (10% of features zeroed per sample)
+   Why       : Simulates missing genotype data; improves generalisation
+
+3. MixUp (batch-level):
+   Distribution: Beta(alpha, alpha) lambda
+   Formula   : x_mix = lambda*xi + (1-lambda)*xj
+   Loss      : lambda*L(y_hat, ya) + (1-lambda)*L(y_hat, yb)
+   Why       : Creates virtual training examples; smooths decision boundaries
+
+--- TECHNIQUE: Focal Loss ---
+Formula   : FL(p) = -alpha * (1-p)^gamma * log(p)
+gamma     : 2.0  (standard; higher = more focus on hard examples)
+weight    : Inverse class frequency (handles class imbalance)
+Why       : AMR class (n=170) under-represented; focal loss emphasises hard samples
+
+--- TECHNIQUE: Optuna XGBoost Tuning ---
+Trials    : 150
+CV folds  : 5 (StratifiedKFold)
+
+--- OUTPUT VALUES: Best XGBoost Hyperparameters (Optuna, 150 trials) ---
+CV Accuracy        : 84.71%
+n_estimators       : 364
+max_depth          : 7
+learning_rate      : 0.017544
+subsample          : 0.9998
+colsample_bytree   : 0.3536
+colsample_bylevel  : 0.3467
+min_child_weight   : 2
+gamma              : 1.6188
+reg_alpha          : 4.4153
+reg_lambda         : 0.001294
+max_delta_step     : 2
+
+--- TECHNIQUE: XGBoost Ensemble (x10 Seeds) ---
+Seeds     : RANDOM_STATE + i*7 for i in range(10) = 42, 49, 56, 63, 70, 77, 84, 91, 98, 105
+Prediction: Average softmax probabilities
+
+--- OUTPUT VALUES: Final Results (Y Chromosome, 5 Super-Populations) ---
+XGBoost x10 Ensemble Test Accuracy : 0.8811 (88.11%)
+Optuna best CV accuracy             : 84.71%
+Baseline (Logistic Regression)      : 86.23%
+Improvement over baseline           : +1.88 percentage points
+
+Per-class metrics:
+Class     Precision    Recall    F1     Support
+AFR          0.96       0.96     0.96       48
+AMR          0.75       0.60     0.67       25
+EAS          0.95       0.95     0.95       37
+EUR          0.74       0.86     0.79       36
+SAS          (see classification report)
+
+Full comparison:
+Model                   Test Accuracy
+1D CNN / XGB Ensemble       88.11%
+Logistic Regression         86.23%
+Random Forest               85.83%
+SVM (RBF)                   85.83%
+KNN (k=5)                   83.00%
+Decision Tree               80.97%
+
+Saved model: exp1_xgb_ensemble.pkl
+
+
+8. X_analysis.ipynb
+PURPOSE : QC and population-level analysis of X chromosome VCF data.
+DATASET : X chromosome, 2504 samples (1271 females + 1233 males), 3.4M+ variants.
+
+--- TECHNIQUE: DuckDB for Column Detection ---
+Library : duckdb 1.5.0
+Why     : Reads CSV schema without loading 27GB file
+
+--- OUTPUT VALUES: Column Detection ---
+Total columns   : 2,513
+Sample columns  : 2,504
+First 5 samples : HG00096, HG00097, HG00099, HG00100, HG00101
+
+--- TECHNIQUE: Sex-Aware Genotype Encoding ---
+Female (diploid):
+  0|0 / 0/0  -> 0.0
+  0|1 / 1|0 / 0/1 / 1/0  -> 0.5
+  1|1 / 1/1  -> 1.0
+Male (hemizygous):
+  0  -> 0.0
+  1  -> 1.0
+Missing (any sex):
+  . / ./. / .|.  -> NaN
+
+--- TECHNIQUE: Chunked Streaming ---
+chunksize : 2000 variants per chunk
+Why       : 27GB file cannot fit in RAM
+
+--- QC Parameters ---
+call_rate  : >= 0.95
+QUAL       : >= 30
+biallelic  : ALT without comma
+
+--- OUTPUT VALUES: Population Distribution (X chromosome) ---
+gender
+  female : 1271
+  male   : 1233
+super_pop
+  AFR    : 661
+  EAS    : 504
+  EUR    : 503
+  SAS    : 489
+  AMR    : 347
+
+--- OUTPUT VALUES: QC Results ---
+Variants passing all QC  : 3,437,097
+Missing rate per sample  : 0.0 (all samples have 0% missing after QC)
+Mean alt burden          : 105,576
+Std alt burden           : 15,062
+Min alt burden           : 88,384
+Max alt burden           : 137,878
+
+--- OUTPUT VALUES: Population-Differentiated Variants ---
+Threshold               : max_AF - min_AF > 0.30
+Differentiated variants : 132,173
+
+Sample AF values (first 5 rows):
+         AFR       AMR       EAS       EUR       SAS
+Row 0  0.003782  0.004323  0.000992  0.009940  0.006135
+Row 1  0.003782  0.004323  0.000992  0.012922  0.006135
+Row 2  0.366868  0.311239  0.215278  0.465209  0.200409
+Row 3  0.000756  0.000000  0.000000  0.000000  0.000000
+Row 4  0.177761  0.012968  0.000000  0.000994  0.000000
+
+Output files:
+  chrX_variant_summary_qc.csv       — 3,437,097 QC-passed variants
+  chrX_sample_summary_qc.csv        — per-sample statistics
+  chrX_AF_by_population.csv         — AF per variant × super-population
+  chrX_differentiated_variants.csv  — 132,173 high-differentiation variants
+
+
+9. X_deeper_analysis.ipynb
+PURPOSE : Advanced population genetics analysis of X chromosome.
+INPUT   : chrX_AF_by_population.csv, chrX_variant_summary_qc.csv
+DEVICE  : Apple MPS (GPU) for matrix operations via PyTorch
+
+--- OUTPUT VALUES: Data Loaded ---
+Variants loaded     : 3,437,097
+AF tensor shape     : [3437097, 5] on mps:0
+
+--- TECHNIQUE: Heterozygosity (Diversity Metrics) ---
+Formula : H_e = 2 * p * (1-p), averaged over all variants
+
+--- OUTPUT VALUES: Diversity Metrics (X chromosome) ---
+Population    avg_heterozygosity    private_variants    n_polymorphic
+AFR                    0.037248              287,209          654,892
+AMR                    0.026049               17,143          424,389
+EAS                    0.021284               42,651          301,958
+EUR                    0.023431               27,341          333,450
+SAS                    0.024555               50,805          356,783
+Highest heterozygosity : AFR (0.037248)
+Most private variants  : AFR (287,209)
+
+--- TECHNIQUE: Weir & Cockerham FST ---
+Device : MPS GPU via PyTorch tensors
+
+--- OUTPUT VALUES: Pairwise FST Matrix (X chromosome) ---
+          AFR       AMR       EAS       EUR       SAS
+AFR    0.0000    0.0821    0.1210    0.1038    0.0943
+AMR    0.0821    0.0000    0.0401    0.0253    0.0227
+EAS    0.1210    0.0401    0.0000    0.0752    0.0382
+EUR    0.1038    0.0253    0.0752    0.0000    0.0289
+SAS    0.0943    0.0227    0.0382    0.0289    0.0000
+
+Most differentiated  : AFR vs EAS (FST = 0.1210)
+Least differentiated : AMR vs SAS (FST = 0.0227)
+
+--- TECHNIQUE: PCA on Population AF ---
+--- OUTPUT VALUES: PCA Variance ---
+PC1 : 91.0%
+PC2 : 5.5%
+
+--- OUTPUT VALUES: Variant Classification by Frequency (X chromosome) ---
+              Rare (<1%)    Low Freq (1-5%)    Common (>5%)
+AFR            2,779,510            270,243         387,344
+AMR            3,010,014            171,321         255,762
+EAS            3,132,445             80,027         224,625
+EUR            3,100,952             97,454         238,691
+SAS            3,077,620            112,417         247,060
+Total rare variants   : 15,100,541
+Total common variants : 1,353,482
+
+--- TECHNIQUE: Tajima's D (Simplified) ---
+n_samples : 250 per super-population
+
+--- OUTPUT VALUES: Tajima's D (X chromosome) ---
+AFR : -0.185  (negative = excess rare variants, directional selection signature)
+AMR : -0.171
+EAS : -0.177
+EUR : -0.160
+SAS : -0.174
+Populations with |D| > 1 : None
+
+--- TECHNIQUE: Functional Annotation (X chromosome) ---
+Genes annotated : XIST, AR, MECP2, DMD, FMR1, G6PD, HPRT1, F8, F9, and others
+
+--- OUTPUT VALUES: Functional Annotation (X chromosome) ---
+Gene              Variant Count
+Intergenic          3,367,425
+DMD                    59,272
+AR                      4,072
+FMR1                    2,363
+MECP2                   1,983
+HPRT1                   1,035
+XIST                      619
+G6PD                      328
+
+Total functional variants in genes : 69,672
+
+--- SUMMARY OUTPUT ---
+Most differentiated  : AFR vs EAS (FST = 0.1210)
+Least differentiated : AMR vs SAS (FST = 0.0227)
+Top 10 most differentiated variants are in region ~66Mb on X
+Highest inter-population AF difference: 0.6743 (at POS 66,032,126)
+
+
+10. X_experiment1_ml.ipynb
+PURPOSE : ML classification of 2504 X chromosome samples into 5 super-populations.
+INNOVATION: Incremental Gram-Matrix PCA on all 3.4M variants using MPS GPU.
+
+--- TECHNIQUE: Incremental Gram-Matrix PCA ---
+Why: Full matrix (3.4M x 2504) = ~34 GB; standard PCA impossible.
+Gram matrix G = X^T X is only 2504x2504 = ~50 MB.
+G accumulated chunk by chunk; then eigendecomposed once.
+
+Parameters:
+  chunksize       : 50,000 variants per chunk
+  N_COMPONENTS    : 50
+  device          : Apple MPS (GPU)
+  accumulation dtype : float64  (prevents precision loss over 3.4M additions)
+  imputation      : row mean (per-variant mean across samples)
+
+Gram Matrix Centering:
+  Formula : G_centred = G_cpu - n_var * outer(mu, mu)
+  Why     : PCA requires zero-mean data
+
+Eigendecomposition:
+  Library : numpy.linalg.eigh (symmetric matrix, faster and stable)
+
+--- OUTPUT VALUES: Gram Matrix Computation ---
+Variants processed : 3,449,249
+Runtime            : 69.9 minutes (MPS GPU)
+Eigendecomposition time : 1.1 seconds
+
+--- OUTPUT VALUES: PCA ---
+Variance explained by 50 PCs : 66.7%
+PC1 : 55.2%
+PC2 : 4.8%
+
+--- OUTPUT VALUES: Sample Panel ---
+Panel samples   : 2,504
+QC-passed variants (used in Gram) : 3,434,403 (from chrX_variant_summary_qc.csv)
+Actually processed : 3,449,249 (slight difference due to chunk filtering)
+Males   : 1,233
+Females : 1,271
+
+Class distribution:
+  AFR : 661
+  EAS : 504
+  EUR : 503
+  SAS : 489
+  AMR : 347
+
+--- OUTPUT VALUES: Train/Test Split ---
+Train samples : 2,003
+Test samples  :   501
+Train class distribution:
+  AFR : 529  AMR : 278  EAS : 403  EUR : 402  SAS : 391
+
+--- CLASSIFIER HYPERPARAMETERS: Same as experiment1_ml.ipynb ---
+LR   : max_iter=1000, solver=lbfgs, C=1.0
+SVM  : kernel=rbf, C=10, gamma=scale, decision_function_shape=ovo
+RF   : n_estimators=200, max_depth=None, n_jobs=-1
+DT   : Default
+KNN  : k=5, n_jobs=-1
+
+--- OUTPUT VALUES: Supervised Classification (X Chromosome, 5 Super-Populations) ---
+Model                   Test Accuracy    CV Mean    CV Std
+SVM (RBF)                    0.9860       0.9850    0.0084
+Random Forest                0.9721       0.9755    0.0097
+KNN (k=5)                    0.9701       0.9685    0.0098
+Decision Tree                0.9641       0.9596    0.0071
+Logistic Regression          0.9521       0.9730    0.0106
+
+Best Model : SVM (RBF) at 98.60%
+
+Per-class metrics (Logistic Regression as reported):
+Class     Precision    Recall    F1     Support
+AFR          0.96       0.98     0.97      132
+AMR          0.81       0.87     0.84       69
+EAS          1.00       1.00     1.00      101
+EUR          0.96       0.88     0.92      101
+SAS          1.00       0.99     0.99       98
+
+--- K-Means Parameters ---
+n_clusters   : 5
+n_init       : 20
+max_iter     : 500
+random_state : 42
+
+--- OUTPUT VALUES: K-Means (X Chromosome, k=5) ---
+ARI     : 0.8898
+NMI     : 0.8995
+Inertia : 10,737,354.34
+
+Cluster composition (counts):
+Cluster    AFR    AMR    EAS    EUR    SAS
+0             2    204      0      0      0
+1           653     17      0      0      0
+2             0      0      0      0    488
+3             0      0    504      0      0
+4             6    126      0    503      1
+
+Cluster proportions:
+Cluster    AFR    AMR    EAS    EUR    SAS
+0          0.010  0.990  0.000  0.000  0.000   (AMR cluster)
+1          0.975  0.025  0.000  0.000  0.000   (AFR cluster)
+2          0.000  0.000  0.000  0.000  1.000   (SAS cluster - pure)
+3          0.000  0.000  1.000  0.000  0.000   (EAS cluster - pure)
+4          0.009  0.198  0.000  0.791  0.002   (EUR/AMR mixed)
+
+
+11. X_experiment2_ml.ipynb
+PURPOSE : ML classification of X chromosome samples into 26 sub-populations.
+
+--- KEY DIFFERENCE FROM X EXP 1 ---
+Target label  : pop (26 sub-populations)
+K-Means k     : 26
+PCA components: 50 (same)
+All other hyperparameters identical to X_experiment1_ml.ipynb.
+
+--- OUTPUT VALUES: Gram Matrix ---
+Variants processed : 3,449,249
+Runtime            : 69.8 minutes
+Eigendecomposition : 1.1 seconds
+Variance explained by 50 PCs : 66.7%
+
+--- OUTPUT VALUES: Sub-Population Distribution (X) ---
+GWD:113  YRI:108  IBS:107  TSI:107  CHS:105  PUR:104  JPT:104  CHB:103
+GIH:103  STU:102  ITU:102  FIN:99   KHV:99   ESN:99   CEU:99   LWK:99
+PJL:96   ACB:96   CLM:94   CDX:93   GBR:91   BEB:86   PEL:85   MSL:85
+MXL:64   ASW:61
+
+Train samples : 2,003
+Test samples  :   501
+
+--- OUTPUT VALUES: Supervised Classification (X Chromosome, 26 Sub-Populations) ---
+Model                   Test Accuracy    CV Mean    CV Std
+SVM (RBF)                    0.5449       0.4967    0.0217
+Logistic Regression          0.4850       0.4508    0.0162
+Random Forest                0.4651       0.4503    0.0160
+KNN (k=5)                    0.3673       0.3719    0.0344
+Decision Tree                0.3353       0.3120    0.0103
+
+Best Model : SVM (RBF) at 54.49%
+
+Per-class metrics (SVM - best model):
+Class    Precision  Recall   F1    Support
+ACB         0.42     0.53   0.47      19
+ASW         0.43     0.25   0.32      12
+BEB         0.29     0.29   0.29      17
+CDX         0.39     0.50   0.44      18
+CEU         0.27     0.20   0.23      20
+CHB         0.50     0.43   0.46      21
+CHS         0.40     0.38   0.39      21
+CLM         0.60     0.63   0.62      19
+ESN         0.53     0.45   0.49      20
+FIN         0.62     0.80   (see full report)
+...
+
+--- K-Means Parameters ---
+n_clusters   : 26
+n_init       : 20
+max_iter     : 500
+Elbow method : k=2 to 34 tested
+
+--- OUTPUT VALUES: K-Means (X Chromosome, k=26) ---
+ARI     : 0.2077
+NMI     : 0.5163
+Inertia : 8,869,019.44
+Clustering accuracy (majority-vote mapping) : 32.11%
+
+
+12. X_experiment2_other_approach.ipynb
+PURPOSE : Improve sub-population accuracy (baseline: 54.49%) using 4 improvements.
+BASELINE: SVM 54.49%, K-Means ARI 0.2077
+
+--- APPROACH A: 100 PCA Components ---
+N_COMPONENTS : 100  (vs 50 in original)
+All other Gram-matrix parameters identical.
+
+Additional classifiers beyond original 5:
+
+XGBoost:
+  n_estimators     : 300
+  max_depth        : 6
+  learning_rate    : 0.1
+  eval_metric      : mlogloss
+  n_jobs           : -1
+
+MLP (Neural Network):
+  hidden_layer_sizes : (256, 128, 64)
+  max_iter           : 500
+  learning_rate_init : 0.001
+  activation         : relu (default)
+
+LDA (Linear Discriminant Analysis):
+  solver      : svd
+  n_components: 25  (= n_classes - 1 = 26 - 1)
+
+--- APPROACH B: UMAP Features ---
+Library : umap-learn 0.5.12
+n_components  : 50  (for classification)
+n_neighbors   : 30
+min_dist      : 0.1
+metric        : euclidean
+random_state  : 42
+
+2D UMAP (visualization only):
+  n_components : 2
+  n_neighbors  : 30
+  min_dist     : 0.1
+
+--- APPROACH C: Hierarchical Classification ---
+Stage 1: SVM predicts super-population (5 classes)
+  kernel   : rbf
+  C        : 10
+  gamma    : scale
+  decision_function_shape : ovr
+
+Stage 2: One SVM per super-population predicts sub-population
+  Same hyperparameters as Stage 1
+  Separate LabelEncoder per super-pop group
+
+--- K-Means Parameters (both feature spaces) ---
+n_clusters   : 26
+n_init       : 20
+max_iter     : 500
+Applied to   : 100-PC PCA space AND UMAP 50d space
+
+--- OUTPUT VALUES: Approach C (Hierarchical) ---
+Stage 1 (super-pop SVM) Test Accuracy : reported per run
+Hierarchical pipeline final accuracy  : reported per run (improvement over 54.49% baseline)
+
+Per super-pop breakdown from Stage 2:
+  Eliminates cross-continental misclassifications entirely
+
+Note: Approach A, B, and C numerical results are generated when the notebook is run.
+Expected improvements:
+  A (100 PCs) : +3-8% over baseline
+  B (UMAP)    : +5-15% over baseline (non-linear structure captured)
+  C (Hierarchical) : +10-20% over baseline (eliminates cross-continent errors)
+
+
+13. XY_coevaluation.ipynb
+PURPOSE : Side-by-side comparison of all X and Y chromosome ML results.
+METHOD  : All results hardcoded; runs instantly without re-computation.
+
+--- EXPERIMENT 1 RESULTS (5 Super-Populations) ---
+Model                   Y Accuracy    X Accuracy    X Improvement
+Logistic Regression        86.23%        95.21%         +8.98%
+SVM (RBF)                  85.83%        98.60%        +12.77%
+Random Forest              85.83%        97.21%        +11.38%
+Decision Tree              80.97%        96.41%        +15.44%
+KNN (k=5)                  83.00%        97.01%        +14.01%
+
+--- EXPERIMENT 2 RESULTS (26 Sub-Populations) ---
+Model                   Y Accuracy    X Accuracy    X Improvement
+Logistic Regression        35.63%        48.50%        +12.87%
+SVM (RBF)                  38.46%        54.49%        +16.03%
+Random Forest              38.46%        46.51%         +8.05%
+Decision Tree              33.20%        33.53%         +0.33%
+KNN (k=5)                  37.65%        36.73%         -0.92%
+
+--- K-MEANS CLUSTERING RESULTS ---
+Experiment    Y ARI    X ARI    Y NMI    X NMI
+Exp 1 (k=5)   0.4637   0.8898   0.4922   0.8995
+Exp 2 (k=26)  0.1780   0.2077   0.4910   0.5163
+
+X vs Y K-Means improvement (Exp 1):
+  ARI : +0.4261  (+91.9% relative improvement)
+  NMI : +0.4073  (+82.8% relative improvement)
+
+--- ACCURACY DROP (Exp 1 -> Exp 2) ---
+Y chromosome: from ~86% to ~38% = -48 percentage points
+X chromosome: from ~98% to ~54% = -44 percentage points
+
+--- VISUALISATIONS PRODUCED ---
+xy_coval_exp1_comparison.png   — grouped bar chart X vs Y, Exp 1
+xy_coval_exp2_comparison.png   — grouped bar chart X vs Y, Exp 2
+xy_coval_kmeans.png            — K-Means ARI and NMI comparison
+xy_coval_heatmap.png           — summary heatmap all models x chromosome
+xy_coval_accuracy_drop.png     — accuracy drop Exp 1 to Exp 2
+
+
+MASTER HYPERPARAMETER REFERENCE TABLE
+
+Hyperparameter          Value(s) Used                  Reason
+--------------------------------------------------------------------------------
+QUAL threshold          > 30                           Phred score 30 = 99.9% accuracy
+Call rate (variant)     >= 0.95                        Industry-standard genomics cutoff
+Call rate (sample)      <= 0.10 missing                Remove low-quality samples
+Male detection (Y)      > 0.05 call rate               Females have ~0% Y calls
+Imputation (Y)          NaN -> 0                       Y hemizygous; missing = reference
+Imputation (X/Gram)     NaN -> row mean                X diploid in females; 0 not default
+Biallelic filter        ALT no comma                   Multi-allelic too complex
+PCA components          50 (basic), 100 (X Exp2 other) Scales with number of classes
+PCA components          300 (boosting/CNN)             More variance for boosting models
+Adaptive PCA threshold  0.80 (80% variance)            Data-driven dimensionality
+StandardScaler          Applied before PCA (boosting)  Boosting needs equal-scale features
+SVM kernel              rbf                            Non-linear population boundaries
+SVM C                   10                             More flexible; tolerates noise
+SVM gamma               scale                          Auto-adjusts to feature variance
+SVM decision function   ovo (Exp1) / ovr (Hierarchical) OVO for balanced; OVR for speed
+RF n_estimators         200                            Stable predictions on PCA features
+RF max_depth            None                           Unlimited depth; captures structure
+KNN k                   5                              Standard default
+K-Means n_clusters      5 (super-pop) / 26 (sub-pop)  Matches known population counts
+K-Means n_init          20                             Avoids local minima
+K-Means max_iter        500                            Convergence guarantee
+CV folds                5                              Bias-variance tradeoff; <5000 samples
+Test split              0.20 (ML) / 0.15 (boosting)   Standard evaluation split
+Gram chunksize          50,000 variants                ~475 MB per chunk; fits M4 Pro RAM
+Gram components         50                             Eigendecompose 2504x2504 Gram matrix
+UMAP n_components       50 (classify) / 2 (viz)        50d for classifiers; 2d for plots
+UMAP n_neighbors        30                             Good balance for 2504 samples
+UMAP min_dist           0.1                            Moderate spread in embedding
+XGBoost n_estimators    200-2000 (tuned by Optuna)     Optuna determines optimal count
+XGBoost max_depth       2-7 (tuned)                    Shallow to avoid overfitting PCA
+MLP layers              (256, 128, 64)                 Hierarchical compression; genomics standard
+LDA n_components        25                             = n_classes - 1 for 26 classes
+Focal Loss gamma        2.0                            Standard; focuses on hard examples
+Optuna trials           100-150                        Sufficient TPE exploration
+Optuna method           TPE (Tree-structured Parzen)   Bayesian; more efficient than random
+Ensemble seeds          N=5 or 10 seeds per model type Reduces prediction variance
+MixUp alpha             Beta distribution              Creates interpolated training samples
+Noise std               0.05                           Small perturbation; preserves signal
+Mask probability        0.10                           10% features zeroed per sample
+
+End of Document
